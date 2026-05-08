@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-setup-sh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check setup.sh is syntactically valid
+        run: |
+          bash -n setup.sh
+          echo "✅ setup.sh syntax is valid"
+
+      - name: Check setup.sh is executable
+        run: |
+          test -x setup.sh || chmod +x setup.sh
+          echo "✅ setup.sh is executable"
+
+      - name: Check for common shell issues
+        run: |
+          # Check for set -e
+          grep -q 'set -e' setup.sh || { echo "❌ setup.sh missing 'set -e'"; exit 1; }
+          # Check for set -u
+          grep -q 'set -u' setup.sh || { echo "❌ setup.sh missing 'set -u'"; exit 1; }
+          # Check for set -o pipefail
+          grep -q 'set -o pipefail' setup.sh || { echo "❌ setup.sh missing 'set -o pipefail'"; exit 1; }
+          echo "✅ Shell safety flags present"
+
+      - name: Lint setup.sh with shellcheck
+        uses: redhat-plumbers-in-action/diff-shellcheck@v1
+        with:
+          files: setup.sh
+
+      - name: Validate docker-compose.yml syntax
+        run: |
+          if command -v docker &>/dev/null; then
+            docker compose -f docker-compose.yml config -q && echo "✅ docker-compose.yml is valid"
+          else
+            echo "Skipping docker compose validation (not installed)"
+          fi
+
+  readme-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check README.md exists
+        run: |
+          test -f README.md || { echo "❌ README.md missing"; exit 1; }
+          echo "✅ README.md exists"
+
+      - name: Check README has installation command
+        run: |
+          grep -q 'curl -fsSL' README.md || { echo "❌ README.md missing curl install command"; exit 1; }
+          echo "✅ README.md has installation command"

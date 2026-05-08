@@ -1,0 +1,101 @@
+version: "3.9"
+
+# Oracle1-in-a-Box — Docker Compose (container-based deployment)
+# For users who prefer containers over bare-metal systemd services.
+#
+# Usage:
+#   docker compose up -d
+#   docker compose logs -f
+#   docker compose down
+
+services:
+  plato-room:
+    build:
+      context: https://github.com/SuperInstance/plato-vessel-core.git
+      dockerfile: Dockerfile
+    container_name: oracle1-plato-room
+    ports:
+      - "8847:8847"
+    volumes:
+      - plato_data:/data/plato
+    environment:
+      - PLATO_PORT=8847
+      - PLATO_DATA_DIR=/data/plato
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8847/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  keeper:
+    build:
+      context: https://github.com/SuperInstance/plato-vessel-core.git
+      dockerfile: Dockerfile
+    container_name: oracle1-keeper
+    ports:
+      - "8900:8900"
+    depends_on:
+      plato-room:
+        condition: service_healthy
+    environment:
+      - KEEPER_PORT=8900
+      - PLATO_URL=http://plato-room:8847
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8900/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  pipeline:
+    build:
+      context: https://github.com/SuperInstance/plato-vessel-core.git
+      dockerfile: Dockerfile
+    container_name: oracle1-pipeline
+    depends_on:
+      plato-room:
+        condition: service_healthy
+    volumes:
+      - pipeline_data:/data/plato-training
+    environment:
+      - PLATO_URL=http://plato-room:8847
+      - DATA_DIR=/data/plato-training
+      - RUN_INTERVAL=3600
+    restart: unless-stopped
+    command: ["python3", "pipeline.py", "--loop"]
+
+  cfp-monitor:
+    build:
+      context: https://github.com/SuperInstance/plato-vessel-core.git
+      dockerfile: Dockerfile
+    container_name: oracle1-cfp-monitor
+    depends_on:
+      plato-room:
+        condition: service_healthy
+    environment:
+      - PLATO_URL=http://plato-room:8847
+      - CFP_ROOM=/room/cfp
+      - RUN_INTERVAL=900
+    restart: unless-stopped
+    command: ["python3", "cfp_monitor.py", "--loop"]
+
+  ambient-briefing:
+    build:
+      context: https://github.com/SuperInstance/plato-vessel-core.git
+      dockerfile: Dockerfile
+    container_name: oracle1-ambient-briefing
+    depends_on:
+      plato-room:
+        condition: service_healthy
+    environment:
+      - PLATO_URL=http://plato-room:8847
+      - RUN_INTERVAL=1800
+    restart: unless-stopped
+    command: ["python3", "ambient_briefing.py", "--loop"]
+
+volumes:
+  plato_data:
+  pipeline_data:
